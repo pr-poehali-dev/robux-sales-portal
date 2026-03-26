@@ -1,6 +1,8 @@
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
 
+const SUPPORT_URL = "https://functions.poehali.dev/8ce22cd5-a01b-45d8-96fe-60574ef3f408";
+
 const HERO_IMAGE = "https://cdn.poehali.dev/projects/e9b14329-2bf0-46bc-a8cf-9efb93a312b4/files/16887d49-bbd3-4afc-b312-e38790e6cc9f.jpg";
 
 const PACKAGES = [
@@ -39,9 +41,22 @@ export default function Index() {
   const [verifyInput, setVerifyInput] = useState("");
   const [showVerifySuccess, setShowVerifySuccess] = useState(false);
   const [supportMsg, setSupportMsg] = useState("");
+  const [supportTopic, setSupportTopic] = useState("");
+  const [supportUsername, setSupportUsername] = useState("");
   const [supportSent, setSupportSent] = useState(false);
+  const [supportLoading, setSupportLoading] = useState(false);
+  const [supportError, setSupportError] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState(0);
+
+  // Admin panel
+  const [adminSection, setAdminSection] = useState(false);
+  const [adminPassword, setAdminPassword] = useState("");
+  const [adminLoggedIn, setAdminLoggedIn] = useState(false);
+  const [adminError, setAdminError] = useState("");
+  const [tickets, setTickets] = useState<Array<{id:number;username:string;topic:string;message:string;status:string;created_at:string}>>([]);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [logoClickCount, setLogoClickCount] = useState(0);
 
   const navItems: { id: Section; label: string; emoji: string }[] = [
     { id: "home", label: "Главная", emoji: "🏠" },
@@ -64,12 +79,66 @@ export default function Index() {
     }
   };
 
-  const handleSupportSend = () => {
-    if (supportMsg.trim().length > 5) {
-      setSupportSent(true);
-      setSupportMsg("");
-      setTimeout(() => setSupportSent(false), 4000);
+  const handleSupportSend = async () => {
+    if (supportMsg.trim().length < 5) return;
+    setSupportLoading(true);
+    setSupportError("");
+    try {
+      const res = await fetch(SUPPORT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: supportUsername, topic: supportTopic, message: supportMsg }),
+      });
+      if (res.ok) {
+        setSupportSent(true);
+        setSupportMsg("");
+        setSupportTopic("");
+        setSupportUsername("");
+      } else {
+        setSupportError("Ошибка отправки. Попробуй ещё раз.");
+      }
+    } catch {
+      setSupportError("Нет соединения. Попробуй ещё раз.");
     }
+    setSupportLoading(false);
+  };
+
+  const handleLogoClick = () => {
+    const next = logoClickCount + 1;
+    setLogoClickCount(next);
+    if (next >= 5) {
+      setAdminSection(true);
+      setLogoClickCount(0);
+    }
+  };
+
+  const handleAdminLogin = async () => {
+    setAdminLoading(true);
+    setAdminError("");
+    try {
+      const res = await fetch(SUPPORT_URL + "/list", {
+        headers: { 'x-admin-password': adminPassword },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTickets(data.tickets || []);
+        setAdminLoggedIn(true);
+      } else {
+        setAdminError("Неверный пароль");
+      }
+    } catch {
+      setAdminError("Ошибка соединения");
+    }
+    setAdminLoading(false);
+  };
+
+  const handleStatusUpdate = async (ticketId: number, status: string) => {
+    await fetch(SUPPORT_URL + "/status", {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-password': adminPassword },
+      body: JSON.stringify({ ticket_id: ticketId, status }),
+    });
+    setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status } : t));
   };
 
   return (
@@ -106,7 +175,7 @@ export default function Index() {
       {/* Navbar */}
       <nav className="sticky top-0 z-50 border-b" style={{ backgroundColor: 'rgba(10,14,26,0.95)', borderColor: 'rgba(255,215,0,0.15)', backdropFilter: 'blur(20px)' }}>
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveSection("home")}>
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => { setActiveSection("home"); handleLogoClick(); }}>
             <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl font-bold animate-pulse-glow"
               style={{ background: 'linear-gradient(135deg, #FFD700, #FF6B35)', color: '#0A0E1A' }}>
               R
@@ -609,6 +678,8 @@ export default function Index() {
                     <label className="block text-sm font-medium mb-2" style={{ color: '#94a3b8' }}>Ваш Roblox никнейм</label>
                     <input
                       type="text"
+                      value={supportUsername}
+                      onChange={e => setSupportUsername(e.target.value)}
                       placeholder="Введи ник..."
                       className="w-full px-4 py-3 rounded-xl text-sm outline-none"
                       style={{ backgroundColor: '#141B2E', border: '1px solid rgba(255,255,255,0.08)', color: '#F8FAFF' }}
@@ -617,6 +688,8 @@ export default function Index() {
                   <div className="mb-4">
                     <label className="block text-sm font-medium mb-2" style={{ color: '#94a3b8' }}>Тема обращения</label>
                     <select
+                      value={supportTopic}
+                      onChange={e => setSupportTopic(e.target.value)}
                       className="w-full px-4 py-3 rounded-xl text-sm outline-none"
                       style={{ backgroundColor: '#141B2E', border: '1px solid rgba(255,255,255,0.08)', color: '#F8FAFF' }}
                     >
@@ -628,7 +701,7 @@ export default function Index() {
                       <option>Другое</option>
                     </select>
                   </div>
-                  <div className="mb-6">
+                  <div className="mb-4">
                     <label className="block text-sm font-medium mb-2" style={{ color: '#94a3b8' }}>Описание проблемы</label>
                     <textarea
                       rows={4}
@@ -639,12 +712,18 @@ export default function Index() {
                       style={{ backgroundColor: '#141B2E', border: '1px solid rgba(255,255,255,0.08)', color: '#F8FAFF' }}
                     />
                   </div>
+                  {supportError && (
+                    <div className="mb-4 px-4 py-2 rounded-xl text-sm" style={{ backgroundColor: 'rgba(239,68,68,0.12)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>
+                      ⚠️ {supportError}
+                    </div>
+                  )}
                   <button
                     onClick={handleSupportSend}
+                    disabled={supportLoading}
                     className="glow-btn w-full py-3 rounded-xl font-bold"
-                    style={{ background: 'linear-gradient(135deg, #FFD700, #FF6B35)', color: '#0A0E1A' }}
+                    style={{ background: 'linear-gradient(135deg, #FFD700, #FF6B35)', color: '#0A0E1A', opacity: supportLoading ? 0.7 : 1 }}
                   >
-                    📨 Отправить обращение
+                    {supportLoading ? '⏳ Отправляем...' : '📨 Отправить обращение'}
                   </button>
                 </>
               )}
@@ -664,6 +743,120 @@ export default function Index() {
                 </div>
               ))}
             </div>
+          </section>
+        )}
+
+        {/* ===== ADMIN PANEL ===== */}
+        {adminSection && (
+          <section className="max-w-5xl mx-auto px-4 py-16">
+            <div className="text-center mb-10">
+              <div className="text-5xl mb-4">🔐</div>
+              <h2 className="font-russo text-4xl mb-2" style={{ color: '#F8FAFF' }}>
+                Админ <span style={{ color: '#FFD700' }}>панель</span>
+              </h2>
+            </div>
+
+            {!adminLoggedIn ? (
+              <div className="max-w-sm mx-auto glow-card p-6 rounded-2xl"
+                style={{ backgroundColor: '#0F1525', border: '1px solid rgba(255,215,0,0.2)' }}>
+                <label className="block text-sm font-medium mb-2" style={{ color: '#94a3b8' }}>Пароль администратора</label>
+                <input
+                  type="password"
+                  value={adminPassword}
+                  onChange={e => setAdminPassword(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAdminLogin()}
+                  placeholder="Введи пароль..."
+                  className="w-full px-4 py-3 rounded-xl text-sm outline-none mb-4"
+                  style={{ backgroundColor: '#141B2E', border: '1px solid rgba(255,255,255,0.08)', color: '#F8FAFF' }}
+                />
+                {adminError && (
+                  <div className="mb-4 text-sm px-3 py-2 rounded-lg" style={{ backgroundColor: 'rgba(239,68,68,0.12)', color: '#f87171' }}>
+                    ⚠️ {adminError}
+                  </div>
+                )}
+                <button
+                  onClick={handleAdminLogin}
+                  disabled={adminLoading}
+                  className="glow-btn w-full py-3 rounded-xl font-bold"
+                  style={{ background: 'linear-gradient(135deg, #FFD700, #FF6B35)', color: '#0A0E1A' }}
+                >
+                  {adminLoading ? '⏳ Проверяем...' : '🔓 Войти'}
+                </button>
+              </div>
+            ) : (
+              <div>
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <span className="px-3 py-1 rounded-full text-xs font-bold" style={{ backgroundColor: 'rgba(16,185,129,0.2)', color: '#10B981' }}>
+                      ✅ Вы в системе
+                    </span>
+                    <span style={{ color: '#64748b', fontSize: '14px' }}>Всего обращений: {tickets.length}</span>
+                  </div>
+                  <button
+                    onClick={() => { setAdminLoggedIn(false); setAdminPassword(""); setTickets([]); }}
+                    className="text-xs px-3 py-1 rounded-lg"
+                    style={{ color: '#64748b', backgroundColor: 'rgba(255,255,255,0.04)' }}
+                  >
+                    Выйти
+                  </button>
+                </div>
+
+                {tickets.length === 0 ? (
+                  <div className="text-center py-16" style={{ color: '#475569' }}>
+                    <div className="text-5xl mb-4">📭</div>
+                    <div>Обращений пока нет</div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    {tickets.map(t => (
+                      <div key={t.id} className="glow-card p-5 rounded-2xl"
+                        style={{ backgroundColor: '#0F1525', border: `1px solid ${t.status === 'new' ? 'rgba(255,215,0,0.2)' : t.status === 'resolved' ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.06)'}` }}>
+                        <div className="flex items-start justify-between gap-4 flex-wrap">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-3 mb-2 flex-wrap">
+                              <span className="font-russo text-sm" style={{ color: '#FFD700' }}>#{t.id}</span>
+                              <span className="font-medium text-sm" style={{ color: '#F8FAFF' }}>👤 {t.username || 'Аноним'}</span>
+                              {t.topic && <span className="text-xs px-2 py-0.5 rounded-md" style={{ backgroundColor: 'rgba(59,130,246,0.15)', color: '#60a5fa' }}>{t.topic}</span>}
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-bold`}
+                                style={{
+                                  backgroundColor: t.status === 'new' ? 'rgba(255,215,0,0.15)' : t.status === 'resolved' ? 'rgba(16,185,129,0.15)' : 'rgba(255,107,53,0.15)',
+                                  color: t.status === 'new' ? '#FFD700' : t.status === 'resolved' ? '#10B981' : '#FF6B35'
+                                }}>
+                                {t.status === 'new' ? '🆕 Новое' : t.status === 'resolved' ? '✅ Решено' : '⏳ В работе'}
+                              </span>
+                            </div>
+                            <p className="text-sm leading-relaxed mb-2" style={{ color: '#94a3b8' }}>{t.message}</p>
+                            <div className="text-xs" style={{ color: '#475569' }}>
+                              {new Date(t.created_at).toLocaleString('ru-RU')}
+                            </div>
+                          </div>
+                          <div className="flex gap-2 flex-shrink-0">
+                            {t.status !== 'in_progress' && (
+                              <button
+                                onClick={() => handleStatusUpdate(t.id, 'in_progress')}
+                                className="px-3 py-1 rounded-lg text-xs font-medium"
+                                style={{ backgroundColor: 'rgba(255,107,53,0.15)', color: '#FF6B35', border: '1px solid rgba(255,107,53,0.2)' }}
+                              >
+                                ⏳ В работу
+                              </button>
+                            )}
+                            {t.status !== 'resolved' && (
+                              <button
+                                onClick={() => handleStatusUpdate(t.id, 'resolved')}
+                                className="px-3 py-1 rounded-lg text-xs font-medium"
+                                style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10B981', border: '1px solid rgba(16,185,129,0.2)' }}
+                              >
+                                ✅ Решено
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </section>
         )}
       </main>

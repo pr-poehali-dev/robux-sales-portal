@@ -1,0 +1,13 @@
+{
+  "tests": [
+    {
+      "name": "Create support ticket",
+      "method": "POST",
+      "path": "/",
+      "body": {"username": "TestUser", "topic": "Не пришли Robux", "message": "Купил 400 робуксов, прошло 10 минут — не пришли"},
+      "expectedStatus": 200,
+      "expectedBody": {"success": true},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
