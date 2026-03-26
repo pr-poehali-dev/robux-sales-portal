@@ -1,0 +1,4 @@
+ALTER TABLE t_p20708393_robux_sales_portal.support_tickets
+ADD COLUMN IF NOT EXISTS user_email VARCHAR(200),
+ADD COLUMN IF NOT EXISTS reply_text TEXT,
+ADD COLUMN IF NOT EXISTS replied_at TIMESTAMP;

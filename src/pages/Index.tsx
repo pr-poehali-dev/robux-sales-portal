@@ -43,6 +43,7 @@ export default function Index() {
   const [supportMsg, setSupportMsg] = useState("");
   const [supportTopic, setSupportTopic] = useState("");
   const [supportUsername, setSupportUsername] = useState("");
+  const [supportEmail, setSupportEmail] = useState("");
   const [supportSent, setSupportSent] = useState(false);
   const [supportLoading, setSupportLoading] = useState(false);
   const [supportError, setSupportError] = useState("");
@@ -54,9 +55,19 @@ export default function Index() {
   const [adminPassword, setAdminPassword] = useState("");
   const [adminLoggedIn, setAdminLoggedIn] = useState(false);
   const [adminError, setAdminError] = useState("");
-  const [tickets, setTickets] = useState<Array<{id:number;username:string;topic:string;message:string;status:string;created_at:string}>>([]);
+  const [tickets, setTickets] = useState<Array<{
+    id: number; username: string; topic: string; message: string;
+    status: string; created_at: string; user_email: string;
+    reply_text: string | null; replied_at: string | null;
+  }>>([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [logoClickCount, setLogoClickCount] = useState(0);
+
+  // Reply modal
+  const [replyTicket, setReplyTicket] = useState<typeof tickets[0] | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [replyLoading, setReplyLoading] = useState(false);
+  const [replyResult, setReplyResult] = useState<{success: boolean; email_sent: boolean} | null>(null);
 
   const navItems: { id: Section; label: string; emoji: string }[] = [
     { id: "home", label: "Главная", emoji: "🏠" },
@@ -87,13 +98,14 @@ export default function Index() {
       const res = await fetch(SUPPORT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: supportUsername, topic: supportTopic, message: supportMsg }),
+        body: JSON.stringify({ username: supportUsername, topic: supportTopic, message: supportMsg, user_email: supportEmail }),
       });
       if (res.ok) {
         setSupportSent(true);
         setSupportMsg("");
         setSupportTopic("");
         setSupportUsername("");
+        setSupportEmail("");
       } else {
         setSupportError("Ошибка отправки. Попробуй ещё раз.");
       }
@@ -139,6 +151,32 @@ export default function Index() {
       body: JSON.stringify({ ticket_id: ticketId, status }),
     });
     setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status } : t));
+  };
+
+  const handleReply = async () => {
+    if (!replyTicket || !replyText.trim()) return;
+    setReplyLoading(true);
+    try {
+      const res = await fetch(SUPPORT_URL + "/reply", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-password': adminPassword },
+        body: JSON.stringify({ ticket_id: replyTicket.id, reply_text: replyText }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setReplyResult({ success: true, email_sent: data.email_sent });
+        setTickets(prev => prev.map(t => t.id === replyTicket.id
+          ? { ...t, status: 'resolved', reply_text: replyText, replied_at: new Date().toISOString() }
+          : t
+        ));
+        setReplyText("");
+      } else {
+        setReplyResult({ success: false, email_sent: false });
+      }
+    } catch {
+      setReplyResult({ success: false, email_sent: false });
+    }
+    setReplyLoading(false);
   };
 
   return (
@@ -702,6 +740,20 @@ export default function Index() {
                     </select>
                   </div>
                   <div className="mb-4">
+                    <label className="block text-sm font-medium mb-2" style={{ color: '#94a3b8' }}>
+                      Ваш Email <span style={{ color: '#FFD700' }}>*</span>
+                      <span className="ml-2 font-normal text-xs" style={{ color: '#475569' }}>— чтобы мы могли ответить</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={supportEmail}
+                      onChange={e => setSupportEmail(e.target.value)}
+                      placeholder="your@email.com"
+                      className="w-full px-4 py-3 rounded-xl text-sm outline-none"
+                      style={{ backgroundColor: '#141B2E', border: '1px solid rgba(255,215,0,0.2)', color: '#F8FAFF' }}
+                    />
+                  </div>
+                  <div className="mb-4">
                     <label className="block text-sm font-medium mb-2" style={{ color: '#94a3b8' }}>Описание проблемы</label>
                     <textarea
                       rows={4}
@@ -817,7 +869,7 @@ export default function Index() {
                               <span className="font-russo text-sm" style={{ color: '#FFD700' }}>#{t.id}</span>
                               <span className="font-medium text-sm" style={{ color: '#F8FAFF' }}>👤 {t.username || 'Аноним'}</span>
                               {t.topic && <span className="text-xs px-2 py-0.5 rounded-md" style={{ backgroundColor: 'rgba(59,130,246,0.15)', color: '#60a5fa' }}>{t.topic}</span>}
-                              <span className={`text-xs px-2 py-0.5 rounded-full font-bold`}
+                              <span className="text-xs px-2 py-0.5 rounded-full font-bold"
                                 style={{
                                   backgroundColor: t.status === 'new' ? 'rgba(255,215,0,0.15)' : t.status === 'resolved' ? 'rgba(16,185,129,0.15)' : 'rgba(255,107,53,0.15)',
                                   color: t.status === 'new' ? '#FFD700' : t.status === 'resolved' ? '#10B981' : '#FF6B35'
@@ -826,15 +878,32 @@ export default function Index() {
                               </span>
                             </div>
                             <p className="text-sm leading-relaxed mb-2" style={{ color: '#94a3b8' }}>{t.message}</p>
-                            <div className="text-xs" style={{ color: '#475569' }}>
-                              {new Date(t.created_at).toLocaleString('ru-RU')}
+                            <div className="flex items-center gap-4 text-xs flex-wrap" style={{ color: '#475569' }}>
+                              <span>{new Date(t.created_at).toLocaleString('ru-RU')}</span>
+                              {t.user_email
+                                ? <span style={{ color: '#60a5fa' }}>📧 {t.user_email}</span>
+                                : <span style={{ color: '#374151' }}>📧 Email не указан</span>
+                              }
                             </div>
+                            {t.reply_text && (
+                              <div className="mt-3 p-3 rounded-lg text-xs" style={{ backgroundColor: 'rgba(16,185,129,0.08)', borderLeft: '2px solid #10B981' }}>
+                                <span style={{ color: '#10B981' }}>✉️ Ответ отправлен:</span>
+                                <p className="mt-1" style={{ color: '#6ee7b7' }}>{t.reply_text}</p>
+                              </div>
+                            )}
                           </div>
-                          <div className="flex gap-2 flex-shrink-0">
+                          <div className="flex flex-col gap-2 flex-shrink-0">
+                            <button
+                              onClick={() => { setReplyTicket(t); setReplyText(""); setReplyResult(null); }}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold"
+                              style={{ background: 'linear-gradient(135deg, #FFD700, #FF6B35)', color: '#0A0E1A' }}
+                            >
+                              ✉️ Ответить
+                            </button>
                             {t.status !== 'in_progress' && (
                               <button
                                 onClick={() => handleStatusUpdate(t.id, 'in_progress')}
-                                className="px-3 py-1 rounded-lg text-xs font-medium"
+                                className="px-3 py-1.5 rounded-lg text-xs font-medium"
                                 style={{ backgroundColor: 'rgba(255,107,53,0.15)', color: '#FF6B35', border: '1px solid rgba(255,107,53,0.2)' }}
                               >
                                 ⏳ В работу
@@ -843,7 +912,7 @@ export default function Index() {
                             {t.status !== 'resolved' && (
                               <button
                                 onClick={() => handleStatusUpdate(t.id, 'resolved')}
-                                className="px-3 py-1 rounded-lg text-xs font-medium"
+                                className="px-3 py-1.5 rounded-lg text-xs font-medium"
                                 style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10B981', border: '1px solid rgba(16,185,129,0.2)' }}
                               >
                                 ✅ Решено
@@ -957,6 +1026,100 @@ export default function Index() {
               <span>🛡️ Гарантия возврата</span>
               <span>⚡ Доставка за 5 мин</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reply Modal */}
+      {replyTicket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}>
+          <div className="w-full max-w-lg rounded-2xl p-6 animate-scale-in"
+            style={{ backgroundColor: '#0F1525', border: '1px solid rgba(255,215,0,0.2)' }}>
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-russo text-xl" style={{ color: '#F8FAFF' }}>✉️ Ответить на обращение</h3>
+              <button onClick={() => { setReplyTicket(null); setReplyResult(null); }}
+                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                style={{ backgroundColor: 'rgba(255,255,255,0.05)', color: '#94a3b8' }}>
+                <Icon name="X" size={16} />
+              </button>
+            </div>
+
+            {/* Ticket info */}
+            <div className="p-4 rounded-xl mb-5" style={{ backgroundColor: '#141B2E', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <div className="flex items-center gap-3 mb-2 flex-wrap">
+                <span className="font-russo text-sm" style={{ color: '#FFD700' }}>#{replyTicket.id}</span>
+                <span className="font-medium text-sm" style={{ color: '#F8FAFF' }}>👤 {replyTicket.username || 'Аноним'}</span>
+                {replyTicket.user_email && (
+                  <span className="text-xs" style={{ color: '#60a5fa' }}>📧 {replyTicket.user_email}</span>
+                )}
+              </div>
+              <p className="text-sm leading-relaxed" style={{ color: '#64748b' }}>{replyTicket.message}</p>
+            </div>
+
+            {replyResult ? (
+              <div className="text-center py-6">
+                {replyResult.success ? (
+                  <>
+                    <div className="text-5xl mb-3">✅</div>
+                    <div className="font-russo text-lg mb-1" style={{ color: '#10B981' }}>Ответ отправлен!</div>
+                    <div className="text-sm" style={{ color: '#64748b' }}>
+                      {replyResult.email_sent
+                        ? `📧 Письмо доставлено на ${replyTicket.user_email}`
+                        : '⚠️ Email не указан — ответ сохранён в системе'
+                      }
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-5xl mb-3">❌</div>
+                    <div className="font-russo text-lg mb-1" style={{ color: '#ef4444' }}>Ошибка отправки</div>
+                    <div className="text-sm" style={{ color: '#64748b' }}>Попробуй ещё раз</div>
+                  </>
+                )}
+                <button
+                  onClick={() => { setReplyTicket(null); setReplyResult(null); }}
+                  className="mt-4 px-6 py-2 rounded-xl text-sm font-bold"
+                  style={{ background: 'linear-gradient(135deg, #FFD700, #FF6B35)', color: '#0A0E1A' }}
+                >
+                  Закрыть
+                </button>
+              </div>
+            ) : (
+              <>
+                {!replyTicket.user_email && (
+                  <div className="mb-4 px-4 py-3 rounded-xl text-sm flex items-center gap-2"
+                    style={{ backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', color: '#f59e0b' }}>
+                    <span>⚠️</span>
+                    <span>Покупатель не указал email — ответ будет сохранён только в системе</span>
+                  </div>
+                )}
+                <div className="mb-5">
+                  <label className="block text-sm font-medium mb-2" style={{ color: '#94a3b8' }}>Ваш ответ покупателю</label>
+                  <textarea
+                    rows={5}
+                    value={replyText}
+                    onChange={e => setReplyText(e.target.value)}
+                    placeholder="Напиши ответ на обращение покупателя..."
+                    className="w-full px-4 py-3 rounded-xl text-sm outline-none resize-none"
+                    style={{ backgroundColor: '#141B2E', border: '1px solid rgba(255,215,0,0.2)', color: '#F8FAFF' }}
+                    autoFocus
+                  />
+                </div>
+                <button
+                  onClick={handleReply}
+                  disabled={replyLoading || !replyText.trim()}
+                  className="glow-btn w-full py-3 rounded-xl font-bold"
+                  style={{
+                    background: 'linear-gradient(135deg, #FFD700, #FF6B35)',
+                    color: '#0A0E1A',
+                    opacity: replyLoading || !replyText.trim() ? 0.6 : 1
+                  }}
+                >
+                  {replyLoading ? '⏳ Отправляем...' : replyTicket.user_email ? `📧 Отправить на ${replyTicket.user_email}` : '💾 Сохранить ответ'}
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
